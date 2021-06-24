@@ -27,6 +27,7 @@ class SendMoneyPage extends LitElement {
 			qortBalance: { type: Number },
 			btcBalance: { type: Number },
 			ltcBalance: { type: Number },
+			rvnBalance: { type: Number },
 			selectedCoin: { type: String },
 			satFeePerByte: { type: Number },
 		}
@@ -126,6 +127,7 @@ class SendMoneyPage extends LitElement {
 							<mwc-list-item value="qort">QORT</mwc-list-item>
 							<mwc-list-item value="btc">BTC</mwc-list-item>
 							<mwc-list-item value="ltc">LTC</mwc-list-item>
+							<mwc-list-item value="rvn">RVN</mwc-list-item>
 						</mwc-select>
 					</p>
 					<p>
@@ -266,6 +268,8 @@ class SendMoneyPage extends LitElement {
 			this.sendBtc()
 		} else if (this.selectedCoin === 'ltc') {
 			this.sendLtc()
+		} else if (this.selectedCoin === 'rvn') {
+			this.sendRvn()
 		}
 	}
 
@@ -495,6 +499,53 @@ class SendMoneyPage extends LitElement {
 		manageResponse(res)
 	}
 
+	async sendRvn() {
+		const amount = this.shadowRoot.getElementById('amountInput').value
+		let recipient = this.shadowRoot.getElementById('recipient').value
+		const xprv58 = this.selectedAddress.rvnWallet.derivedMasterPrivateKey
+
+		this.sendMoneyLoading = true
+		this.btnDisable = true
+
+		const makeRequest = async () => {
+			const opts = {
+				xprv58: xprv58,
+				receivingAddress: recipient,
+				ravencoinAmount: amount,
+				feePerByte: (this.satFeePerByte / 1e8).toFixed(8),
+			}
+			const response = await parentEpml.request('sendRvn', opts)
+			return response
+		}
+
+		const manageResponse = (response) => {
+			if (response.length === 64) {
+				this.shadowRoot.getElementById('amountInput').value = 0
+				this.shadowRoot.getElementById('recipient').value = ''
+				this.errorMessage = ''
+				this.recipient = ''
+				this.amount = 0
+				this.successMessage = 'Transaction Successful!'
+				this.sendMoneyLoading = false
+				this.btnDisable = false
+			} else if (response === false) {
+				this.errorMessage = 'Transaction Failed!'
+				this.sendMoneyLoading = false
+				this.btnDisable = false
+				throw new Error(txnResponse)
+			} else {
+				this.errorMessage = response.message
+				this.sendMoneyLoading = false
+				this.btnDisable = false
+				throw new Error(response)
+			}
+		}
+
+		// Call makeRequest
+		const res = await makeRequest()
+		manageResponse(res)
+	}
+
 	_textMenu(event) {
 		const getSelectedText = () => {
 			var text = ''
@@ -547,10 +598,14 @@ class SendMoneyPage extends LitElement {
 		this.ltcSatMinFee = 10
 		this.ltcSatMaxFee = 100
 		this.ltcDefaultFee = 30 // Set to 30 LTC-per-sat
+		this.rvnSatMinFee = 1000
+		this.rvnSatMaxFee = 1000
+		this.rvnDefaultFee = 1000 // Set to 1000 RVN-per-sat
 		this.isValidAmount = false
 		this.qortBalance = 0
 		this.btcBalance = 0
 		this.ltcBalance = 0
+		this.rvnBalance = 0
 		this.selectedCoin = 'invalid'
 
 		let configLoaded = false
@@ -591,6 +646,9 @@ class SendMoneyPage extends LitElement {
 
 		// Get LTC Balance
 		this.updateLTCAccountBalance()
+
+		// Get RVN Balance
+		this.updateRVNAccountBalance()
 
 		window.addEventListener('contextmenu', (event) => {
 			event.preventDefault()
@@ -699,6 +757,15 @@ class SendMoneyPage extends LitElement {
 			this.shadowRoot.getElementById('feeSlider').min = this.ltcSatMinFee
 			this.shadowRoot.getElementById('feeSlider').max = this.ltcSatMaxFee
 			this.satFeePerByte = this.ltcDefaultFee
+		} else if (coinType === 'rvn') {
+			this.shadowRoot.getElementById('balance').textContent = `${this.rvnBalance} RVN`
+			this.shadowRoot.getElementById('address').textContent = this.selectedAddress.rvnWallet.address
+			this.shadowRoot.querySelector('.selectedBalance').style.display = 'block'
+			this.shadowRoot.getElementById('amountInput').label = 'Amount (RVN)'
+			this.shadowRoot.getElementById('recipient').label = 'To (RVN address)'
+			this.shadowRoot.getElementById('feeSlider').min = this.rvnSatMinFee
+			this.shadowRoot.getElementById('feeSlider').max = this.rvnSatMaxFee
+			this.satFeePerByte = this.rvnDefaultFee
 		} else {
 			this.selectedCoin = 'invalid'
 		}
@@ -732,6 +799,22 @@ class SendMoneyPage extends LitElement {
 					parentEpml.request('showSnackBar', 'Failed to Fetch LTC Balance. Try again!')
 				} else {
 					this.ltcBalance = (Number(res) / 1e8).toFixed(8)
+				}
+			})
+	}
+
+	updateRVNAccountBalance() {
+		parentEpml
+			.request('apiCall', {
+				url: `/crosschain/rvn/walletbalance`,
+				method: 'POST',
+				body: window.parent.reduxStore.getState().app.selectedAddress.rvnWallet.derivedMasterPublicKey,
+			})
+			.then((res) => {
+				if (isNaN(Number(res))) {
+					parentEpml.request('showSnackBar', 'Failed to Fetch RVN Balance. Try again!')
+				} else {
+					this.rvnBalance = (Number(res) / 1e8).toFixed(8)
 				}
 			})
 	}
